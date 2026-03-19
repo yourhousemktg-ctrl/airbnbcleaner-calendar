@@ -1,36 +1,61 @@
-// Cleaner Payments Calendar Logic
+// Cleaner Payments Calendar Logic - FIREBASE EDITION
 
-// State
-let currentDate = new Date(); // Dynamic date that user is currently viewing
+// --- CONFIGURATION ---
+const FIREBASE_URL = 'https://airbnb-calendar-37e67-default-rtdb.firebaseio.com';
+const ADMIN_PASSWORD = '825'; // simple password for the user
+
+// --- STATE ---
+let currentDate = new Date();
 let selectedProperty = 'property-1';
-const actualToday = new Date(); // Fixed 'today' reference
+const actualToday = new Date();
+let isAdmin = sessionStorage.getItem('cleaner_admin') === 'true';
 
-// Seeding standard dates mentioned (assuming March 2026 based on the current context)
-const defaultPaidDates = {
-    'property-1': [
-        '2026-03-04',
-        '2026-03-09',
-        '2026-03-15',
-        '2026-03-20',
-        '2026-03-22'
-    ],
+let paidDatesData = {
+    'property-1': [],
     'property-2': []
 };
 
-// Load paid dates from localStorage or initialize with default seed
-let paidDatesData = JSON.parse(localStorage.getItem('cleaner_paid_dates')) || defaultPaidDates;
-
-// Elements
+// --- ELEMENTS ---
 const monthYearDisplay = document.getElementById('current-month-year');
 const calendarGrid = document.getElementById('calendar-grid');
 const propertySelect = document.getElementById('property-select');
 const prevBtn = document.getElementById('prev-month');
 const nextBtn = document.getElementById('next-month');
 const todayBtn = document.getElementById('today-btn');
+const adminBtn = document.getElementById('admin-btn');
 
-// Formatting utilities
+// --- DATABASE SYNC ---
+const loadDataFromFirebase = async () => {
+    try {
+        const response = await fetch(`${FIREBASE_URL}/paidDates.json`);
+        const data = await response.json();
+        
+        if (data) {
+            paidDatesData = {
+                'property-1': data['property-1'] || [],
+                'property-2': data['property-2'] || []
+            };
+        }
+        renderCalendar(false);
+    } catch (e) {
+        console.error("Error loading from Firebase:", e);
+    }
+};
+
+const saveDataToFirebase = async () => {
+    try {
+        await fetch(`${FIREBASE_URL}/paidDates.json`, {
+            method: 'PUT', // Overwrites the node
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(paidDatesData)
+        });
+    } catch (e) {
+        console.error("Error saving to Firebase:", e);
+    }
+};
+
+// --- UTILITIES ---
 const formatDateStr = (year, month, day) => {
-    // month is 0-indexed, so we add 1
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
@@ -40,7 +65,11 @@ const isPaid = (dateStr) => {
 };
 
 const togglePaidStatus = (dateStr) => {
-    // Ensure property array exists
+    if (!isAdmin) {
+        alert("🔒 View Only Mode! Click the Login button and enter the password to edit dates.");
+        return;
+    }
+
     if (!paidDatesData[selectedProperty]) {
         paidDatesData[selectedProperty] = [];
     }
@@ -49,20 +78,53 @@ const togglePaidStatus = (dateStr) => {
     const index = propDates.indexOf(dateStr);
     
     if (index === -1) {
-        // Not paid -> Mark as paid
-        propDates.push(dateStr);
+        propDates.push(dateStr); // Mark paid
     } else {
-        // Paid -> Unmark
-        propDates.splice(index, 1);
+        propDates.splice(index, 1); // Unmark
     }
     
-    // Save to localStorage so it persists
-    localStorage.setItem('cleaner_paid_dates', JSON.stringify(paidDatesData));
+    // Save to Firebase
+    saveDataToFirebase();
     
-    // Re-render calendar to show changes
-    renderCalendar(false); // don't animate on simple toggles
+    // Re-render
+    renderCalendar(false); 
 };
 
+// --- INIT ADMIN BUTTON ---
+const updateAdminUI = () => {
+    if (isAdmin) {
+        adminBtn.innerHTML = '🔓 Edit Mode';
+        adminBtn.style.color = '#fff';
+        adminBtn.style.background = 'rgba(59, 130, 246, 0.4)';
+        adminBtn.style.borderColor = '#3b82f6';
+    } else {
+        adminBtn.innerHTML = '🔒 Login';
+        adminBtn.style.color = '#34d399';
+        adminBtn.style.background = 'rgba(16, 185, 129, 0.15)';
+        adminBtn.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+    }
+};
+
+adminBtn.addEventListener('click', () => {
+    if (isAdmin) {
+        isAdmin = false;
+        sessionStorage.removeItem('cleaner_admin');
+        updateAdminUI();
+        alert("Logged out. Calendar is now view-only.");
+    } else {
+        const pass = prompt("Enter the Admin Password:");
+        if (pass === ADMIN_PASSWORD) {
+            isAdmin = true;
+            sessionStorage.setItem('cleaner_admin', 'true');
+            updateAdminUI();
+            alert("Unlocked! You can now click dates to mark them as paid.");
+        } else if (pass !== null) {
+            alert("Incorrect password.");
+        }
+    }
+});
+
+// --- CORE LOGIC ---
 const isSameDate = (date1, date2) => {
     return date1.getFullYear() === date2.getFullYear() &&
            date1.getMonth() === date2.getMonth() &&
@@ -72,7 +134,6 @@ const isSameDate = (date1, date2) => {
 const renderCalendar = (animate = true) => {
     if (animate) {
         calendarGrid.classList.remove('animating');
-        // trigger reflow
         void calendarGrid.offsetWidth;
         calendarGrid.classList.add('animating');
     }
@@ -80,77 +141,48 @@ const renderCalendar = (animate = true) => {
     calendarGrid.innerHTML = '';
     
     const year = currentDate.getFullYear();
-    const month = currentDate.getMonth(); // 0-indexed
+    const month = currentDate.getMonth(); 
     
-    // Display Title (Month Year)
     const monthNames = [
         "January", "February", "March", "April", "May", "June", 
         "July", "August", "September", "October", "November", "December"
     ];
     monthYearDisplay.textContent = `${monthNames[month]} ${year}`;
     
-    // Find what day of the week the first of the month falls on
-    const firstDay = new Date(year, month, 1).getDay(); // 0 is Sunday
-    
-    // Total days in current month
+    const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
-    // Total days in previous month
     const daysInPrevMonth = new Date(year, month, 0).getDate();
     
-    // 1. Fill previous month padded days
     for (let i = firstDay - 1; i >= 0; i--) {
-        const prevDay = daysInPrevMonth - i;
-        const cell = createDayCell(year, month - 1, prevDay, true);
-        calendarGrid.appendChild(cell);
+        calendarGrid.appendChild(createDayCell(year, month - 1, daysInPrevMonth - i, true));
     }
     
-    // 2. Fill current month days
     for (let i = 1; i <= daysInMonth; i++) {
-        const cell = createDayCell(year, month, i, false);
-        calendarGrid.appendChild(cell);
+        calendarGrid.appendChild(createDayCell(year, month, i, false));
     }
     
-    // 3. Fill next month days to complete 42 cell grid (6 rows of 7 days)
-    const totalCells = calendarGrid.children.length;
-    const remainingCells = 42 - totalCells; 
-    
+    const remainingCells = 42 - calendarGrid.children.length; 
     for (let i = 1; i <= remainingCells; i++) {
-        const cell = createDayCell(year, month + 1, i, true);
-        calendarGrid.appendChild(cell);
+        calendarGrid.appendChild(createDayCell(year, month + 1, i, true));
     }
 };
 
 const createDayCell = (year, month, day, isOtherMonth) => {
-    // JavaScript Date handles month underflow/overflow automatically
-    // e.g. new Date(2026, -1, 15) evaluates to Dec 15, 2025
     const adjustedDate = new Date(year, month, day);
-    const adjYear = adjustedDate.getFullYear();
-    const adjMonth = adjustedDate.getMonth();
-    const adjDay = adjustedDate.getDate();
-    
-    const dateStr = formatDateStr(adjYear, adjMonth, adjDay);
+    const dateStr = formatDateStr(adjustedDate.getFullYear(), adjustedDate.getMonth(), adjustedDate.getDate());
     const paid = isPaid(dateStr);
     
     const cell = document.createElement('div');
     cell.className = 'day-cell';
     
-    if (isOtherMonth) {
-        cell.classList.add('other-month');
-    }
-    if (isSameDate(adjustedDate, actualToday)) {
-        cell.classList.add('is-today');
-    }
-    if (paid) {
-        cell.classList.add('is-paid');
-    }
+    if (isOtherMonth) cell.classList.add('other-month');
+    if (isSameDate(adjustedDate, actualToday)) cell.classList.add('is-today');
+    if (paid) cell.classList.add('is-paid');
     
-    // Number wrapper
     const dayNum = document.createElement('div');
     dayNum.className = 'day-num';
-    dayNum.textContent = adjDay;
+    dayNum.textContent = adjustedDate.getDate();
     
-    // Content wrapper for "Open" or "$$$"
     const dayContent = document.createElement('div');
     dayContent.className = 'day-content';
     if (paid) {
@@ -160,7 +192,6 @@ const createDayCell = (year, month, day, isOtherMonth) => {
     cell.appendChild(dayNum);
     cell.appendChild(dayContent);
     
-    // Add click event only to days in the current focused month
     if (!isOtherMonth) {
         cell.addEventListener('click', () => togglePaidStatus(dateStr));
     }
@@ -168,37 +199,49 @@ const createDayCell = (year, month, day, isOtherMonth) => {
     return cell;
 };
 
-// Event Listeners for controls
-prevBtn.addEventListener('click', () => {
-    currentDate.setMonth(currentDate.getMonth() - 1);
-    renderCalendar();
-});
+// --- EVENT LISTENERS ---
+prevBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
+nextBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
+todayBtn.addEventListener('click', () => { currentDate = new Date(actualToday.getFullYear(), actualToday.getMonth(), 1); renderCalendar(); });
+propertySelect.addEventListener('change', (e) => { selectedProperty = e.target.value; renderCalendar(); });
 
-nextBtn.addEventListener('click', () => {
-    currentDate.setMonth(currentDate.getMonth() + 1);
-    renderCalendar();
-});
+// --- INITIALIZATION ---
+updateAdminUI();
 
-todayBtn.addEventListener('click', () => {
-    // Reset back to actual today's month and year
-    currentDate = new Date(actualToday.getFullYear(), actualToday.getMonth(), 1);
-    renderCalendar();
-});
-
-propertySelect.addEventListener('change', (e) => {
-    selectedProperty = e.target.value;
-    renderCalendar(); // Re-render when property changes
-});
-
-// Initialization
-// Start the view in March 2026 where our seeded data is, 
-// unless they've opened it far into the future, then show actual today.
-// In a real app we'd probably just use actualToday initially, 
-// but to show the seeded data let's center on March 2026 if today is in 2026.
 if (actualToday.getFullYear() === 2026 && actualToday.getMonth() <= 3) {
-    currentDate = new Date(2026, 2, 1); // Month 2 is March (0-indexed)
+    currentDate = new Date(2026, 2, 1);
 } else {
     currentDate = new Date(actualToday.getFullYear(), actualToday.getMonth(), 1);
 }
 
+// Initial placeholder map while fetching from Firebase
 renderCalendar();
+
+// First-time seed: We need to push initial data if DB is empty
+const seedDatabaseOnce = async () => {
+    try {
+        const response = await fetch(`${FIREBASE_URL}/paidDates.json`);
+        const data = await response.json();
+        if (!data) {
+            // Seed it with the previous local storage default if DB is completely empty string/null
+            const defaultData = {
+                'property-1': ['2026-03-04', '2026-03-09', '2026-03-15', '2026-03-20', '2026-03-22'],
+                'property-2': []
+            };
+            await fetch(`${FIREBASE_URL}/paidDates.json`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(defaultData)
+            });
+            console.log("Database seeded.");
+        }
+    } catch(e) { console.error(e); }
+};
+
+// Seed then load
+seedDatabaseOnce().then(() => {
+    loadDataFromFirebase();
+});
+
+// Poll the database every 10 seconds to get live updates if cleaner is watching
+setInterval(loadDataFromFirebase, 10000);
