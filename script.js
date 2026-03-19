@@ -2,7 +2,7 @@
 
 // --- CONFIGURATION ---
 const FIREBASE_URL = 'https://airbnb-calendar-37e67-default-rtdb.firebaseio.com';
-const ADMIN_PASSWORD = '825'; // simple password for the user
+const ADMIN_PASSWORD = 'MARCmackie3390#'; // simple password for the user
 
 // --- STATE ---
 let currentDate = new Date();
