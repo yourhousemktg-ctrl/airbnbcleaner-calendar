@@ -242,31 +242,59 @@ body {
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.day-cell.is-paid {
-    background: var(--paid-bg);
-    border-color: var(--paid-border);
+.day-cell.state-open {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
     box-shadow: 0 0 20px rgba(16, 185, 129, 0.05) inset;
 }
-
-.day-cell.is-paid:hover:not(.other-month) {
+.day-cell.state-open:hover:not(.other-month) {
     border-color: rgba(16, 185, 129, 0.6);
 }
 
-.day-cell.is-paid .day-content {
+.day-cell.state-cleaning {
+    background: rgba(244, 63, 94, 0.15);
+    border-color: rgba(244, 63, 94, 0.4);
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.05) inset;
+}
+.day-cell.state-cleaning:hover:not(.other-month) {
+    border-color: rgba(244, 63, 94, 0.6);
+}
+
+.day-cell.state-paid {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.05) inset;
+}
+.day-cell.state-paid:hover:not(.other-month) {
+    border-color: rgba(245, 158, 11, 0.6);
+}
+
+.day-cell.state-paid .day-content,
+.day-cell.state-open .day-content, 
+.day-cell.state-cleaning .day-content {
     opacity: 1;
     transform: scale(1);
 }
 
 .money {
-    color: var(--paid-text);
+    color: #fbbf24;
     font-weight: 700;
     font-size: 1.15rem;
     letter-spacing: 0.05em;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
+.state-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.state-label.open-text { color: #34d399; }
+.state-label.clean-text { color: #fb7185; }
+
 /* Open days hint */
-.day-cell:not(.is-paid):not(.other-month):hover::after {
+.day-cell:not(.state-open):not(.state-cleaning):not(.state-paid):not(.other-month):hover::after {
     content: "Open";
     position: absolute;
     bottom: 0.75rem;
@@ -321,13 +349,18 @@ body {
 }
 
 .legend-open {
-    background: var(--day-bg);
-    border: 1px solid var(--day-border);
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.legend-needs-cleaning {
+    background: rgba(244, 63, 94, 0.15);
+    border: 1px solid rgba(244, 63, 94, 0.4);
 }
 
 .legend-paid {
-    background: var(--paid-bg);
-    border: 1px solid var(--paid-border);
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.4);
 }
 
 .legend-item .money {

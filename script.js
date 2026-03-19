@@ -2,7 +2,7 @@
 
 // --- CONFIGURATION ---
 const FIREBASE_URL = 'https://airbnb-calendar-37e67-default-rtdb.firebaseio.com';
-const ADMIN_PASSWORD = 'MARCmackie3390#'; // simple password for the user
+const ADMIN_PASSWORD = 'MARCmackie3390#';
 
 // --- STATE ---
 let currentDate = new Date();
@@ -10,9 +10,10 @@ let selectedProperty = 'property-1';
 const actualToday = new Date();
 let isAdmin = sessionStorage.getItem('cleaner_admin') === 'true';
 
-let paidDatesData = {
-    'property-1': [],
-    'property-2': []
+// Data structure: { 'property-1': { '2026-03-04': 'paid', '2026-03-05': 'cleaning', '2026-03-06': 'open' } }
+let calendarData = {
+    'property-1': {},
+    'property-2': {}
 };
 
 // --- ELEMENTS ---
@@ -25,15 +26,25 @@ const todayBtn = document.getElementById('today-btn');
 const adminBtn = document.getElementById('admin-btn');
 
 // --- DATABASE SYNC ---
+const migrateDataIfArray = (propData) => {
+    // If the data is an old array of paid dates, convert it to the new object key-value format
+    if (Array.isArray(propData)) {
+        let newMap = {};
+        propData.forEach(date => newMap[date] = 'paid');
+        return newMap;
+    }
+    return propData || {};
+};
+
 const loadDataFromFirebase = async () => {
     try {
         const response = await fetch(`${FIREBASE_URL}/paidDates.json`);
         const data = await response.json();
         
         if (data) {
-            paidDatesData = {
-                'property-1': data['property-1'] || [],
-                'property-2': data['property-2'] || []
+            calendarData = {
+                'property-1': migrateDataIfArray(data['property-1']),
+                'property-2': migrateDataIfArray(data['property-2'])
             };
         }
         renderCalendar(false);
@@ -45,9 +56,9 @@ const loadDataFromFirebase = async () => {
 const saveDataToFirebase = async () => {
     try {
         await fetch(`${FIREBASE_URL}/paidDates.json`, {
-            method: 'PUT', // Overwrites the node
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(paidDatesData)
+            body: JSON.stringify(calendarData)
         });
     } catch (e) {
         console.error("Error saving to Firebase:", e);
@@ -59,34 +70,44 @@ const formatDateStr = (year, month, day) => {
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
-const isPaid = (dateStr) => {
-    const propertyDates = paidDatesData[selectedProperty] || [];
-    return propertyDates.includes(dateStr);
+const getDayState = (dateStr) => {
+    const propMap = calendarData[selectedProperty] || {};
+    return propMap[dateStr] || null; // returns null, 'open', 'cleaning', or 'paid'
 };
 
-const togglePaidStatus = (dateStr) => {
+const toggleDayState = (dateStr) => {
     if (!isAdmin) {
         alert("🔒 View Only Mode! Click the Login button and enter the password to edit dates.");
         return;
     }
 
-    if (!paidDatesData[selectedProperty]) {
-        paidDatesData[selectedProperty] = [];
+    if (!calendarData[selectedProperty]) {
+        calendarData[selectedProperty] = {};
     }
     
-    const propDates = paidDatesData[selectedProperty];
-    const index = propDates.indexOf(dateStr);
+    const currentState = calendarData[selectedProperty][dateStr];
+    let nextState = null;
     
-    if (index === -1) {
-        propDates.push(dateStr); // Mark paid
+    // Cycle logic: Unmarked -> 'open' -> 'cleaning' -> 'paid' -> Unmarked (remove)
+    if (!currentState) {
+        nextState = 'open';
+    } else if (currentState === 'open') {
+        nextState = 'cleaning';
+    } else if (currentState === 'cleaning') {
+        nextState = 'paid';
+    } else if (currentState === 'paid') {
+        nextState = null;
+    }
+    
+    // Update State
+    if (nextState) {
+        calendarData[selectedProperty][dateStr] = nextState;
     } else {
-        propDates.splice(index, 1); // Unmark
+        // Remove it from the database to keep it clean and save space
+        delete calendarData[selectedProperty][dateStr];
     }
     
-    // Save to Firebase
     saveDataToFirebase();
-    
-    // Re-render
     renderCalendar(false); 
 };
 
@@ -117,7 +138,7 @@ adminBtn.addEventListener('click', () => {
             isAdmin = true;
             sessionStorage.setItem('cleaner_admin', 'true');
             updateAdminUI();
-            alert("Unlocked! You can now click dates to mark them as paid.");
+            alert("Unlocked! Click dates repeatedly to cycle through: Open, Needs Cleaning, Paid, and Unmarked.");
         } else if (pass !== null) {
             alert("Incorrect password.");
         }
@@ -153,14 +174,17 @@ const renderCalendar = (animate = true) => {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const daysInPrevMonth = new Date(year, month, 0).getDate();
     
+    // Fill previous month padding
     for (let i = firstDay - 1; i >= 0; i--) {
         calendarGrid.appendChild(createDayCell(year, month - 1, daysInPrevMonth - i, true));
     }
     
+    // Fill current month
     for (let i = 1; i <= daysInMonth; i++) {
         calendarGrid.appendChild(createDayCell(year, month, i, false));
     }
     
+    // Fill next month padding up to 42 cells grid
     const remainingCells = 42 - calendarGrid.children.length; 
     for (let i = 1; i <= remainingCells; i++) {
         calendarGrid.appendChild(createDayCell(year, month + 1, i, true));
@@ -170,14 +194,18 @@ const renderCalendar = (animate = true) => {
 const createDayCell = (year, month, day, isOtherMonth) => {
     const adjustedDate = new Date(year, month, day);
     const dateStr = formatDateStr(adjustedDate.getFullYear(), adjustedDate.getMonth(), adjustedDate.getDate());
-    const paid = isPaid(dateStr);
+    const state = getDayState(dateStr); // 'open', 'cleaning', 'paid', or null
     
     const cell = document.createElement('div');
     cell.className = 'day-cell';
     
     if (isOtherMonth) cell.classList.add('other-month');
     if (isSameDate(adjustedDate, actualToday)) cell.classList.add('is-today');
-    if (paid) cell.classList.add('is-paid');
+    
+    // Apply state styling class
+    if (state) {
+        cell.classList.add(`state-${state}`);
+    }
     
     const dayNum = document.createElement('div');
     dayNum.className = 'day-num';
@@ -185,15 +213,22 @@ const createDayCell = (year, month, day, isOtherMonth) => {
     
     const dayContent = document.createElement('div');
     dayContent.className = 'day-content';
-    if (paid) {
+    
+    // Set appropriate content inside the bubble
+    if (state === 'paid') {
         dayContent.innerHTML = '<span class="money">$$$</span>';
+    } else if (state === 'open') {
+        dayContent.innerHTML = '<div class="state-label open-text">OPEN</div>';
+    } else if (state === 'cleaning') {
+        dayContent.innerHTML = '<div class="state-label clean-text">CLEAN</div>';
     }
     
     cell.appendChild(dayNum);
     cell.appendChild(dayContent);
     
+    // Add interactions
     if (!isOtherMonth) {
-        cell.addEventListener('click', () => togglePaidStatus(dateStr));
+        cell.addEventListener('click', () => toggleDayState(dateStr));
     }
     
     return cell;
@@ -214,34 +249,10 @@ if (actualToday.getFullYear() === 2026 && actualToday.getMonth() <= 3) {
     currentDate = new Date(actualToday.getFullYear(), actualToday.getMonth(), 1);
 }
 
-// Initial placeholder map while fetching from Firebase
 renderCalendar();
 
-// First-time seed: We need to push initial data if DB is empty
-const seedDatabaseOnce = async () => {
-    try {
-        const response = await fetch(`${FIREBASE_URL}/paidDates.json`);
-        const data = await response.json();
-        if (!data) {
-            // Seed it with the previous local storage default if DB is completely empty string/null
-            const defaultData = {
-                'property-1': ['2026-03-04', '2026-03-09', '2026-03-15', '2026-03-20', '2026-03-22'],
-                'property-2': []
-            };
-            await fetch(`${FIREBASE_URL}/paidDates.json`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(defaultData)
-            });
-            console.log("Database seeded.");
-        }
-    } catch(e) { console.error(e); }
-};
+// Automatically kick off load
+loadDataFromFirebase();
 
-// Seed then load
-seedDatabaseOnce().then(() => {
-    loadDataFromFirebase();
-});
-
-// Poll the database every 10 seconds to get live updates if cleaner is watching
+// Poll live updates from Firebase every 10 seconds
 setInterval(loadDataFromFirebase, 10000);
